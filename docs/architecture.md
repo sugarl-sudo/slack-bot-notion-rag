@@ -21,6 +21,7 @@
 ## Configuration
 - All secrets are read from environment variables (see `.env.example`).
 - Pydantic settings object ensures validation and type coercion.
+- Development environment provisioning uses `uv` (see `README.md` for instructions).
 
 ## Deployment Targets
 - Designed for containerized deployment (Cloud Run, AWS Lambda with API Gateway, or similar).

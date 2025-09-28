@@ -12,32 +12,39 @@ Lab knowledge-assistant Slack bot that retrieves answers from Notion content usi
 
 ### Prerequisites
 - Python 3.10+
+- [uv](https://github.com/astral-sh/uv) package manager (>=0.2 recommended)
 - Slack App credentials (Bot token and Signing secret)
 - Notion integration token and accessible databases
 - OpenAI API key (or compatible LLM provider)
 
-### Installation
+### Environment Setup (uv)
 ```bash
-python -m venv .venv
+# 1. Install uv if not available yet
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. From the project root, create and populate the virtual environment
+./scripts/setup_with_uv.sh
+
+# 3. Activate the environment for your shell session
 source .venv/bin/activate
-pip install --upgrade pip
-pip install -e .[dev]
 ```
 
-Create a `.env` file (see `.env.example`) with your credentials before running the bot.
+The helper script runs `uv venv` and `uv pip install -e .[dev]` so tooling and dependencies stay in sync with `pyproject.toml`.
 
 ### Local Development
 ```bash
 # Format and lint
-ruff check src tests
-black src tests
+uv run ruff check src tests
+uv run black src tests
 
 # Run tests
-pytest
+uv run pytest
 
 # Start the bot (after configuring environment variables)
-python -m slack_bot_notion_rag.main
+uv run python -m slack_bot_notion_rag.main
 ```
+
+When using `uv run`, the command executes inside the managed virtual environment without manually activating it.
 
 ## Repository Layout
 ```
@@ -55,6 +62,7 @@ src/
       llm.py
 scripts/
   bootstrap_vectors.py
+  setup_with_uv.sh
 ```
 
 ## Next Steps
