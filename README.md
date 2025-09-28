@@ -2,10 +2,10 @@
 
 Lab knowledge-assistant Slack bot that retrieves answers from Notion content using Retrieval-Augmented Generation (RAG).
 
-## Features (planned)
+## Features
 - Slack mention trigger and threaded replies with cited Notion sources
-- RAG pipeline powered by LangChain and Chroma vector store
-- Periodic Notion sync to keep embeddings fresh
+- RAG pipeline powered by LangChain, OpenAI embeddings, and Chroma vector store
+- Notion sync service that chunks pages and keeps the vector store up to date
 - Configuration through environment variables and `.env` files
 
 ## Getting Started
@@ -40,6 +40,9 @@ uv run black src tests
 # Run tests
 uv run pytest
 
+# Sync Notion content into the vector store
+uv run python scripts/bootstrap_vectors.py
+
 # Start the bot (after configuring environment variables)
 uv run python -m slack_bot_notion_rag.main
 ```
@@ -65,8 +68,13 @@ scripts/
   setup_with_uv.sh
 ```
 
+## Notion Sync Overview
+1. `scripts/bootstrap_vectors.py` loads environment variables through Pydantic settings.
+2. The sync service iterates configured databases, renders page content to text, chunks it, and writes embeddings to Chroma.
+3. Existing embeddings for the same Notion database are cleared before new chunks are stored.
+
 ## Next Steps
 - Implement credential loading and secrets management integrations
-- Add Notion ingestion workflows and persistence layer
-- Harden Slack event handling and message formatting
+- Harden Slack event handling and message formatting (e.g., block kit responses)
+- Add scheduled sync / webhook triggers to keep the knowledge base fresh
 - Set up CI and deployment automations (Cloud Run / AWS Lambda)
