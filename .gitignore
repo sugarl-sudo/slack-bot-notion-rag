@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+.venv/
+venv/
+ENV/
+.env
+.env.*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Data / caches
+*.log
+*.sqlite3
+.cache/
+vector_store/
+
+# OS
+.DS_Store
