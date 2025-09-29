@@ -6,11 +6,17 @@ from functools import lru_cache
 from typing import List
 
 from pydantic import Field, validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Runtime configuration resolved from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
 
     slack_signing_secret: str = Field(..., env="SLACK_SIGNING_SECRET")
     slack_bot_token: str = Field(..., env="SLACK_BOT_TOKEN")
@@ -36,11 +42,6 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     answer_max_tokens: int = Field(default=800, env="ANSWER_MAX_TOKENS")
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
 
     @validator("notion_root_page_ids", pre=True)
     def _split_ids(cls, value: str | List[str]) -> List[str]:  # noqa: D401

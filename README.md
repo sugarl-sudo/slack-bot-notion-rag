@@ -72,6 +72,7 @@ scripts/
 1. `scripts/bootstrap_vectors.py` loads environment variables through Pydantic settings.
 2. The sync service iterates configured root pages, renders descendant page content to text, chunks it, and writes embeddings to Chroma.
 3. Existing embeddings for the same Notion root page are cleared before new chunks are stored.
+- Configure `NOTION_ROOT_PAGE_IDS` as a JSON array (e.g., `["<root-page-id>", "<another>"]`) to control the sync scope.
 
 ## Next Steps
 - Implement credential loading and secrets management integrations

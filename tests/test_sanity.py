@@ -9,7 +9,7 @@ def test_settings_split_ids_and_defaults(tmp_path):
         "SLACK_BOT_TOKEN=token\n"
         "NOTION_API_TOKEN=n-token\n"
         "OPENAI_API_KEY=oai\n"
-        "NOTION_ROOT_PAGE_IDS=page1, page2\n"
+        "NOTION_ROOT_PAGE_IDS=[\"page1\", \"page2\"]\n"
     )
 
     settings = Settings(_env_file=env_file)
