@@ -62,35 +62,71 @@ class NotionSyncService:
             self._store.add_documents(documents)
 
     def _fetch_documents_for_root_page(self, root_page_id: str) -> List[Document]:
-        documents: List[Document] = []
-        pages_to_process: List[str] = [root_page_id]
         seen_pages: set[str] = set()
         seen_databases: set[str] = set()
+        return self._process_page(
+            page_id=root_page_id,
+            root_page_id=root_page_id,
+            seen_pages=seen_pages,
+            seen_databases=seen_databases,
+        )
 
-        while pages_to_process:
-            page_id = pages_to_process.pop()
-            if page_id in seen_pages:
+    def _process_page(
+        self,
+        *,
+        page_id: str,
+        root_page_id: str,
+        seen_pages: set[str],
+        seen_databases: set[str],
+        database_id: str | None = None,
+    ) -> List[Document]:
+        if page_id in seen_pages:
+            return []
+        seen_pages.add(page_id)
+
+        documents: List[Document] = []
+        documents.extend(
+            self._build_documents_for_page(
+                page_id=page_id,
+                root_page_id=root_page_id,
+                database_id=database_id,
+            )
+        )
+
+        for resource in self._discover_child_resources(page_id):
+            resource_id = resource.get("id")
+            if not resource_id:
                 continue
-            seen_pages.add(page_id)
-
-            page_documents = self._build_documents_for_page(page_id, root_page_id=root_page_id)
-            documents.extend(page_documents)
-
-            for resource in self._discover_child_resources(page_id):
-                resource_id = resource.get("id")
-                if not resource_id:
-                    continue
-                if resource.get("type") == "page":
-                    pages_to_process.append(resource_id)
-                elif resource.get("type") == "database" and resource_id not in seen_databases:
-                    seen_databases.add(resource_id)
-                    documents.extend(
-                        self._fetch_documents_for_database(resource_id, root_page_id=root_page_id)
+            resource_type = resource.get("type")
+            if resource_type == "page":
+                documents.extend(
+                    self._process_page(
+                        page_id=resource_id,
+                        root_page_id=root_page_id,
+                        seen_pages=seen_pages,
+                        seen_databases=seen_databases,
+                        database_id=None,
                     )
+                )
+            elif resource_type == "database":
+                documents.extend(
+                    self._process_database(
+                        database_id=resource_id,
+                        root_page_id=root_page_id,
+                        seen_pages=seen_pages,
+                        seen_databases=seen_databases,
+                    )
+                )
 
         return documents
 
-    def _build_documents_for_page(self, page_id: str, *, root_page_id: str) -> List[Document]:
+    def _build_documents_for_page(
+        self,
+        page_id: str,
+        *,
+        root_page_id: str,
+        database_id: str | None = None,
+    ) -> List[Document]:
         try:
             page = self._client.pages.retrieve(page_id=page_id)
         except Exception as exc:  # pragma: no cover - defensive catch for API failures
@@ -103,6 +139,7 @@ class NotionSyncService:
         if not content.strip():
             return []
 
+        source_type = "database_page" if database_id else "page"
         base_document = Document(
             page_content=content,
             metadata={
@@ -110,7 +147,8 @@ class NotionSyncService:
                 "source": page_url,
                 "page_id": page_id,
                 "root_page_id": root_page_id,
-                "source_type": "page",
+                "source_type": source_type,
+                **({"database_id": database_id} if database_id else {}),
             },
         )
         chunks = self._splitter.split_documents([base_document])
@@ -135,7 +173,18 @@ class NotionSyncService:
                 break
             start_cursor = response.get("next_cursor")
 
-    def _fetch_documents_for_database(self, database_id: str, *, root_page_id: str) -> List[Document]:
+    def _process_database(
+        self,
+        *,
+        database_id: str,
+        root_page_id: str,
+        seen_pages: set[str],
+        seen_databases: set[str],
+    ) -> List[Document]:
+        if database_id in seen_databases:
+            return []
+        seen_databases.add(database_id)
+
         try:
             pages = list(self._iterate_database_pages(database_id))
         except APIResponseError as exc:
@@ -147,31 +196,21 @@ class NotionSyncService:
                 )
                 return []
             raise
+
         documents: List[Document] = []
         for page in pages:
             page_id = page.get("id")
             if not page_id:
                 continue
-            page_title = extract_title_from_properties(page.get("properties", {})) or "Untitled"
-            page_url = page.get("url")
-            content = self._fetch_page_content(page_id)
-            if not content.strip():
-                continue
-
-            base_document = Document(
-                page_content=content,
-                metadata={
-                    "title": page_title,
-                    "source": page_url,
-                    "page_id": page_id,
-                    "database_id": database_id,
-                    "root_page_id": root_page_id,
-                    "source_type": "database_page",
-                },
+            documents.extend(
+                self._process_page(
+                    page_id=page_id,
+                    root_page_id=root_page_id,
+                    seen_pages=seen_pages,
+                    seen_databases=seen_databases,
+                    database_id=database_id,
+                )
             )
-            chunks = self._splitter.split_documents([base_document])
-            enriched_chunks = self._attach_chunk_ids(page_id, chunks)
-            documents.extend(enriched_chunks)
         return documents
 
     def _should_skip_inaccessible_database(self, error: APIResponseError) -> bool:
@@ -234,9 +273,11 @@ class NotionSyncService:
     def fetch_database_text(self, database_id: str, *, root_page_id: str | None = None) -> List[str]:
         """Return plain-text representation of the database entries (backwards compatibility)."""
 
-        docs = self._fetch_documents_for_database(
-            database_id,
+        docs = self._process_database(
+            database_id=database_id,
             root_page_id=root_page_id or database_id,
+            seen_pages=set(),
+            seen_databases=set(),
         )
         return [doc.page_content for doc in docs]
 
