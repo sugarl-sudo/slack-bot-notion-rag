@@ -2,7 +2,7 @@
 
 ## Components
 - Slack App (Bolt) handles events and routes questions to the RAG pipeline.
-- Notion Sync Service fetches content from configured Notion databases, chunks it, and writes embeddings to the vector store.
+- Notion Sync Service fetches content from configured Notion root pages (including all descendant pages and database entries), chunks it, and writes embeddings to the vector store.
 - Vector Store (Chroma) persists embedded document fragments for similarity search.
 - LLM module (OpenAI Chat model via LangChain) crafts answers and returns Slack-ready text with citations.
 
@@ -15,8 +15,8 @@
 
 ## Background Sync
 - A scheduled job or manual trigger runs `uv run python scripts/bootstrap_vectors.py`.
-- The sync service pulls Notion pages, flattens block content, and splits it into overlapping chunks.
-- Chroma embeddings are regenerated per database to keep the knowledge base fresh.
+- The sync service pulls the entire hierarchy beneath each configured Notion parent page, flattens block content, and splits it into overlapping chunks.
+- Chroma embeddings are regenerated per root page to keep the knowledge base fresh.
 
 ## Configuration
 - All secrets are read from environment variables (see `.env.example`).
@@ -24,5 +24,6 @@
 - Development environment provisioning uses `uv` (see `README.md` for instructions).
 
 ## Deployment Targets
-- Designed for containerized deployment (Cloud Run, AWS Lambda with API Gateway, or similar).
+- Designed for containerized deployment on Google Cloud Run.
 - Slack HTTP mode requires HTTPS endpoint; Socket Mode works for local development.
+- Supporting GCP services: Cloud Scheduler triggers a Cloud Functions job that refreshes the Notion vector store on a schedule, and Secret Manager holds credentials for Slack, Notion, and LLM providers.

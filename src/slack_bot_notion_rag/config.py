@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     slack_app_token: str | None = Field(default=None, env="SLACK_APP_TOKEN")
 
     notion_api_token: str = Field(..., env="NOTION_API_TOKEN")
-    notion_database_ids: List[str] = Field(default_factory=list, env="NOTION_DATABASE_IDS")
+    notion_root_page_ids: List[str] = Field(default_factory=list, env="NOTION_ROOT_PAGE_IDS")
     notion_page_size: int = Field(default=50, env="NOTION_PAGE_SIZE")
     notion_request_timeout: float = Field(default=30.0, env="NOTION_REQUEST_TIMEOUT")
 
@@ -42,9 +42,9 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         case_sensitive = False
 
-    @validator("notion_database_ids", pre=True)
+    @validator("notion_root_page_ids", pre=True)
     def _split_ids(cls, value: str | List[str]) -> List[str]:  # noqa: D401
-        """Split comma-separated database identifiers."""
+        """Split comma-separated Notion identifiers."""
 
         if isinstance(value, list):
             return value

@@ -14,7 +14,7 @@ Lab knowledge-assistant Slack bot that retrieves answers from Notion content usi
 - Python 3.10+
 - [uv](https://github.com/astral-sh/uv) package manager (>=0.2 recommended)
 - Slack App credentials (Bot token and Signing secret)
-- Notion integration token and accessible databases
+- Notion integration token and access to the designated Notion parent page(s)
 - OpenAI API key (or compatible LLM provider)
 
 ### Environment Setup (uv)
@@ -70,8 +70,8 @@ scripts/
 
 ## Notion Sync Overview
 1. `scripts/bootstrap_vectors.py` loads environment variables through Pydantic settings.
-2. The sync service iterates configured databases, renders page content to text, chunks it, and writes embeddings to Chroma.
-3. Existing embeddings for the same Notion database are cleared before new chunks are stored.
+2. The sync service iterates configured root pages, renders descendant page content to text, chunks it, and writes embeddings to Chroma.
+3. Existing embeddings for the same Notion root page are cleared before new chunks are stored.
 
 ## Next Steps
 - Implement credential loading and secrets management integrations

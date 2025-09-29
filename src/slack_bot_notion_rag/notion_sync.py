@@ -37,30 +37,104 @@ class NotionSyncService:
     def sync(self) -> None:
         """Pull configured databases and push contents into the vector store."""
 
-        if not self._settings.notion_database_ids:
-            logger.warning("No Notion databases configured; skipping sync")
+        if not self._settings.notion_root_page_ids:
+            logger.warning("No Notion root pages configured; skipping sync")
             return
 
-        for database_id in self._settings.notion_database_ids:
+        for root_page_id in self._settings.notion_root_page_ids:
             try:
-                documents = self._fetch_documents_for_database(database_id)
+                documents = self._fetch_documents_for_root_page(root_page_id)
             except Exception as exc:  # pragma: no cover - defensive catch for API failures
-                logger.exception("Failed to fetch Notion database %s: %s", database_id, exc)
+                logger.exception("Failed to fetch Notion hierarchy %s: %s", root_page_id, exc)
                 continue
 
             if not documents:
-                logger.info("No documents retrieved from Notion database %s", database_id)
+                logger.info("No documents retrieved from Notion root page %s", root_page_id)
                 continue
 
             logger.info(
-                "Replacing %s documents in vector store for database %s",
+                "Replacing %s documents in vector store for root page %s",
                 len(documents),
-                database_id,
+                root_page_id,
             )
-            self._store.delete_where(filter={"database_id": database_id})
+            self._store.delete_where(filter={"root_page_id": root_page_id})
             self._store.add_documents(documents)
 
-    def _fetch_documents_for_database(self, database_id: str) -> List[Document]:
+    def _fetch_documents_for_root_page(self, root_page_id: str) -> List[Document]:
+        documents: List[Document] = []
+        pages_to_process: List[str] = [root_page_id]
+        seen_pages: set[str] = set()
+        seen_databases: set[str] = set()
+
+        while pages_to_process:
+            page_id = pages_to_process.pop()
+            if page_id in seen_pages:
+                continue
+            seen_pages.add(page_id)
+
+            page_documents = self._build_documents_for_page(page_id, root_page_id=root_page_id)
+            documents.extend(page_documents)
+
+            for resource in self._discover_child_resources(page_id):
+                resource_id = resource.get("id")
+                if not resource_id:
+                    continue
+                if resource.get("type") == "page":
+                    pages_to_process.append(resource_id)
+                elif resource.get("type") == "database" and resource_id not in seen_databases:
+                    seen_databases.add(resource_id)
+                    documents.extend(
+                        self._fetch_documents_for_database(resource_id, root_page_id=root_page_id)
+                    )
+
+        return documents
+
+    def _build_documents_for_page(self, page_id: str, *, root_page_id: str) -> List[Document]:
+        try:
+            page = self._client.pages.retrieve(page_id=page_id)
+        except Exception as exc:  # pragma: no cover - defensive catch for API failures
+            logger.warning("Failed retrieving page %s: %s", page_id, exc)
+            return []
+
+        page_title = extract_title_from_properties(page.get("properties", {})) or page.get("url", "")
+        page_url = page.get("url")
+        content = self._fetch_page_content(page_id)
+        if not content.strip():
+            return []
+
+        base_document = Document(
+            page_content=content,
+            metadata={
+                "title": page_title or "Untitled",
+                "source": page_url,
+                "page_id": page_id,
+                "root_page_id": root_page_id,
+                "source_type": "page",
+            },
+        )
+        chunks = self._splitter.split_documents([base_document])
+        return self._attach_chunk_ids(page_id, chunks)
+
+    def _discover_child_resources(self, block_id: str) -> Iterable[Dict]:
+        start_cursor = None
+        while True:
+            response = self._client.blocks.children.list(block_id=block_id, start_cursor=start_cursor)
+            for block in response.get("results", []):
+                block_type = block.get("type")
+                child_id = block.get("id")
+                if block_type == "child_page" and child_id:
+                    yield {"type": "page", "id": child_id}
+                    continue
+                if block_type == "child_database" and child_id:
+                    yield {"type": "database", "id": child_id}
+                    continue
+                if block.get("has_children") and child_id:
+                    yield from self._discover_child_resources(child_id)
+            if not response.get("has_more"):
+                break
+            start_cursor = response.get("next_cursor")
+
+    def _fetch_documents_for_database(self, database_id: str, *, root_page_id: str) -> List[Document]:
         pages = list(self._iterate_database_pages(database_id))
         documents: List[Document] = []
         for page in pages:
@@ -80,6 +154,8 @@ class NotionSyncService:
                     "source": page_url,
                     "page_id": page_id,
                     "database_id": database_id,
+                    "root_page_id": root_page_id,
+                    "source_type": "database_page",
                 },
             )
             chunks = self._splitter.split_documents([base_document])
@@ -124,16 +200,24 @@ class NotionSyncService:
             for block in response.get("results", []):
                 yield block
                 child_id = block.get("id")
-                if block.get("has_children") and child_id:
+                block_type = block.get("type")
+                if (
+                    block.get("has_children")
+                    and child_id
+                    and block_type not in {"child_page", "child_database"}
+                ):
                     yield from self._collect_blocks(child_id)
             if not response.get("has_more"):
                 break
             start_cursor = response.get("next_cursor")
 
-    def fetch_database_text(self, database_id: str) -> List[str]:
+    def fetch_database_text(self, database_id: str, *, root_page_id: str | None = None) -> List[str]:
         """Return plain-text representation of the database entries (backwards compatibility)."""
 
-        docs = self._fetch_documents_for_database(database_id)
+        docs = self._fetch_documents_for_database(
+            database_id,
+            root_page_id=root_page_id or database_id,
+        )
         return [doc.page_content for doc in docs]
 
 
