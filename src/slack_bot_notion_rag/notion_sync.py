@@ -9,6 +9,7 @@ import httpx
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from notion_client import Client
+from notion_client.errors import APIResponseError
 
 from .config import Settings
 from .rag_pipeline.vector_store import VectorStore
@@ -135,7 +136,17 @@ class NotionSyncService:
             start_cursor = response.get("next_cursor")
 
     def _fetch_documents_for_database(self, database_id: str, *, root_page_id: str) -> List[Document]:
-        pages = list(self._iterate_database_pages(database_id))
+        try:
+            pages = list(self._iterate_database_pages(database_id))
+        except APIResponseError as exc:
+            if self._should_skip_inaccessible_database(exc):
+                logger.warning(
+                    "Skipping Notion database %s due to inaccessible data sources: %s",
+                    database_id,
+                    exc,
+                )
+                return []
+            raise
         documents: List[Document] = []
         for page in pages:
             page_id = page.get("id")
@@ -162,6 +173,15 @@ class NotionSyncService:
             enriched_chunks = self._attach_chunk_ids(page_id, chunks)
             documents.extend(enriched_chunks)
         return documents
+
+    def _should_skip_inaccessible_database(self, error: APIResponseError) -> bool:
+        """Return True when the integration cannot access the database content."""
+
+        message = getattr(error, "message", str(error))
+        if message and "does not contain any data sources accessible" in message:
+            return True
+        code = getattr(error, "code", None)
+        return code in {"restricted_resource", "object_not_found"}
 
     def _attach_chunk_ids(self, page_id: str, chunks: Iterable[Document]) -> List[Document]:
         page_prefix = page_id.replace("-", "")
